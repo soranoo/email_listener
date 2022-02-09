@@ -17,7 +17,7 @@ setup(
         'Programming Language :: Python :: 3.8',
         'Topic :: Communications :: Email',
     ],
-    url='https://github.com/njdreikosen/email_listener',
+    url='https://github.com/soranoo/email_listener',
     author='Noah Dreikosen',
     author_email='ndreikosen@gmail.com',
     license='GNU GPLv3',

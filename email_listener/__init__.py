@@ -1,3 +1,7 @@
+# -----------------* Modified *-----------------
+# original: https://github.com/njdreikosen/email_listener/blob/master/email_listener/__init__.py
+# ----------------------------------------------
+
 """email_listener: Listen in an email folder and process incoming emails.
 
 Example:
@@ -26,6 +30,9 @@ import email
 import html2text
 from imapclient import IMAPClient, SEEN
 import os
+
+from datetime import datetime
+
 # Imports from this package
 from .helpers import (
     calc_timeout,
@@ -47,7 +54,7 @@ class EmailListener:
 
     """
 
-    def __init__(self, email, app_password, folder, attachment_dir):
+    def __init__(self, email, app_password, folder="Inbox", attachment_dir=f"{os.getcwd()}/data/email attachments", logger=print, imap_address="imap.gmail.com"):
         """Initialize an EmailListener instance.
 
         Args:
@@ -56,17 +63,25 @@ class EmailListener:
             folder (str): The email folder to listen in.
             attachment_dir (str): The file path to folder to save scraped
                 emails and attachments to.
+            logger (function): The function for messages printed to the console.
+            imap_address (str): The IMAP server to log into. Defaults to Gmail (imap.gmail.com).
 
         Returns:
             None
 
         """
 
+        # create attachment directory if it's not exist.
+        if not os.path.exists(attachment_dir):
+            os.makedirs(attachment_dir)
+
         self.email = email
         self.app_password = app_password
         self.folder = folder
         self.attachment_dir = attachment_dir
         self.server = None
+        self.logger = logger
+        self.imap_address = imap_address
 
 
     def login(self):
@@ -80,7 +95,7 @@ class EmailListener:
 
         """
 
-        self.server = IMAPClient('imap.gmail.com')
+        self.server = IMAPClient(self.imap_address)
         self.server.login(self.email, self.app_password)
         self.server.select_folder(self.folder, readonly=False)
 
@@ -100,7 +115,7 @@ class EmailListener:
         self.server = None
 
 
-    def scrape(self, move=None, unread=False, delete=False):
+    def scrape(self, move=None, unread=False, delete=False, latest_only=False):
         """Scrape unread emails from the current folder.
 
         Args:
@@ -110,6 +125,7 @@ class EmailListener:
                 Defaults to False.
             delete (bool): Whether the emails should be deleted. Defaults to
                 False.
+            latest_only {on development} (bool): Get the latest email only(the last email that the user received).
 
         Returns:
             A list of the file paths to each scraped email.
@@ -133,12 +149,22 @@ class EmailListener:
             from_email = self.__get_from(email_message)
 
             # Generate the dict key for this email
-            key = "{}_{}".format(uid, from_email)
+            key = f"{uid}_{from_email}"
             # Generate the value dictionary to be filled later
             val_dict = {}
 
             # Display notice
-            print("PROCESSING: Email UID = {} from {}".format(uid, from_email))
+            self.logger(f"PROCESSING: Email UID = {uid} from {from_email}")
+
+            # Add the email address
+            val_dict["email_address"] = from_email
+
+            # Add the email uid
+            val_dict["email_uid"] = uid
+
+            # Add the date, ref: https://docs.python.org/2/library/datetime.html#strftime-and-strptime-behavior
+            # eg. Wed, 2 Feb 2022 04:16:44 +0000
+            val_dict["date"] = datetime.strptime(self.__get_date(email_message), "%a, %d %b %Y %H:%M:%S %z")
 
             # Add the subject
             val_dict["Subject"] = self.__get_subject(email_message).strip()
@@ -195,6 +221,18 @@ class EmailListener:
             return "No Subject"
         return subject
 
+    def __get_date(self, email_message):
+        """
+
+        """
+
+        # Get the date
+        date = email_message.get("Date")
+        # If there isn't a date
+        if date is None:
+            return False
+        return date
+
 
     def __parse_multipart_message(self, email_message, val_dict):
         """Helper function for parsing multipart email messages.
@@ -217,7 +255,7 @@ class EmailListener:
             if bool(file_name):
                 # Generate file path
                 file_path = os.path.join(self.attachment_dir, file_name)
-                file = open(file_path, 'wb')
+                file = open(file_path, "wb")
                 file.write(part.get_payload(decode=True))
                 file.close()
                 # Get the list of attachments, or initialize it if there isn't one
@@ -226,14 +264,14 @@ class EmailListener:
                 val_dict["attachments"] = attachment_list
 
             # If the part is html text
-            elif part.get_content_type() == 'text/html':
+            elif part.get_content_type() == "text/html":
                 # Convert the body from html to plain text
                 val_dict["Plain_HTML"] = html2text.html2text(
                         part.get_payload())
                 val_dict["HTML"] = part.get_payload()
 
             # If the part is plain text
-            elif part.get_content_type() == 'text/plain':
+            elif part.get_content_type() == "text/plain":
                 # Get the body
                 val_dict["Plain_Text"] = part.get_payload()
 
@@ -296,13 +334,14 @@ class EmailListener:
         return
 
 
-    def listen(self, timeout, process_func=write_txt_file, **kwargs):
+    def listen(self, timeout, update_frequency=30, process_func=write_txt_file, **kwargs):
         """Listen in an email folder for incoming emails, and process them.
 
         Args:
             timeout (int or list): Either an integer representing the number
                 of minutes to timeout in, or a list, formatted as [hour, minute]
                 of the local time to timeout at.
+            update_frequency (int): Check for new email every certain time.
             process_func (function): A function called to further process the
                 emails. The function must take only the list of file paths
                 returned by the scrape function as an argument. Defaults to the
@@ -315,6 +354,7 @@ class EmailListener:
                         If not set, emails are kept as read.
                     delete (bool): Whether the emails should be deleted. If not
                         set, emails are not deleted.
+                    latest_only {on development} (bool): Get the latest email only(the last email that the user received).
 
         Returns:
             None
@@ -330,11 +370,11 @@ class EmailListener:
 
         # Run until the timeout is reached
         while (get_time() < outer_timeout):
-            self.__idle(process_func=process_func, **kwargs)
+            self.__idle(timeout=update_frequency, process_func=process_func, **kwargs)
         return
 
 
-    def __idle(self, process_func=write_txt_file, **kwargs):
+    def __idle(self, timeout=30, process_func=write_txt_file, **kwargs):
         """Helper function, idles in an email folder processing incoming emails.
 
         Args:
@@ -342,6 +382,7 @@ class EmailListener:
                 emails. The function must take only the list of file paths
                 returned by the scrape function as an argument. Defaults to the
                 example function write_txt_file in the email_processing module.
+            timeout (int): Idle timeout.
             **kwargs (dict): Additional arguments for processing the email.
                 Optional arguments include:
                     move (str): The folder to move emails to. If not set, the
@@ -350,6 +391,7 @@ class EmailListener:
                         If not set, emails are kept as read.
                     delete (bool): Whether the emails should be deleted. If not
                         set, emails are not deleted.
+                    latest_only {on development} (bool): Get the latest email only(the last email that the user received).
 
         Returns:
             None
@@ -357,26 +399,25 @@ class EmailListener:
         """
 
         # Set the relevant kwarg variables
-        move = kwargs.get('move')
-        unread = bool(kwargs.get('unread'))
-        delete = bool(kwargs.get('delete'))
+        move = kwargs.get("move")
+        unread = bool(kwargs.get("unread"))
+        delete = bool(kwargs.get("delete"))
+        latest_only = bool(kwargs.get("latest_only"))
 
         # Start idling
         self.server.idle()
-        print("Connection is now in IDLE mode.")
         # Set idle timeout to 5 minutes
         inner_timeout = get_time() + 60*5
         # Until idle times out
         while (get_time() < inner_timeout):
-            # Check for a new response every 30 seconds
-            responses = self.server.idle_check(timeout=30)
-            print("Server sent:", responses if responses else "nothing")
+            # Check for a new response every x seconds
+            responses = self.server.idle_check(timeout=timeout)
             # If there is a response
             if (responses):
                 # Suspend the idling
                 self.server.idle_done()
                 # Process the new emails
-                msgs = self.scrape(move=move, unread=unread, delete=delete)
+                msgs = self.scrape(move=move, unread=unread, delete=delete, latest_only=latest_only)
                 # Run the process function
                 process_func(self, msgs)
                 # Restart idling
