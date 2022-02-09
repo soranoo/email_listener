@@ -14,7 +14,7 @@ email_listener is a Python package for listening in an email folder and processi
 
 <a name="installation"></a>
 ## Installation
-Clone the project and run the `setup.py`
+Clone the repository and run the `setup.py`
 ```
 gh repo clone soranoo/email_listener
 ```
