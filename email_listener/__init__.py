@@ -54,7 +54,7 @@ class EmailListener:
 
     """
 
-    def __init__(self, email, app_password, folder="Inbox", attachment_dir=f"{os.getcwd()}/data/email attachments", logger=print, imap_address="imap.gmail.com"):
+    def __init__(self, email, app_password, folder="Inbox", attachment_dir=f"{os.getcwd()}/data/email attachments", logger=print, imap_address="imap.gmail.com", imap_port=993):
         """Initialize an EmailListener instance.
 
         Args:
@@ -65,7 +65,7 @@ class EmailListener:
                 emails and attachments to.
             logger (function): The function for messages printed to the console.
             imap_address (str): The IMAP server to log into. Defaults to Gmail (imap.gmail.com).
-
+            imap_port (int): The port to log into the IMAP server on. Defaults to 993.
         Returns:
             None
 
@@ -82,6 +82,7 @@ class EmailListener:
         self.server = None
         self.logger = logger
         self.imap_address = imap_address
+        self.imap_port = imap_port
 
 
     def login(self):
@@ -95,7 +96,7 @@ class EmailListener:
 
         """
 
-        self.server = IMAPClient(self.imap_address)
+        self.server = IMAPClient(self.imap_address, self.imap_port)
         self.server.login(self.email, self.app_password)
         self.server.select_folder(self.folder, readonly=False)
 
@@ -114,8 +115,7 @@ class EmailListener:
         self.server.logout()
         self.server = None
 
-
-    def scrape(self, move=None, unread=False, delete=False, latest_only=False):
+    def scrape(self, move=None, unread=False, delete=False, search_filter="UNSEEN", latest_only=False, no_log = False):
         """Scrape unread emails from the current folder.
 
         Args:
@@ -125,8 +125,10 @@ class EmailListener:
                 Defaults to False.
             delete (bool): Whether the emails should be deleted. Defaults to
                 False.
-            latest_only {on development} (bool): Get the latest email only(the last email that the user received).
-
+            search_filter (str): The search filter to use. Defaults to "UNSEEN".
+            latest_only (bool): Get the latest email only(the last email that the user received).
+                Defaults to False.
+            no_log (bool): Whether to hide the notice. Defaults to False.
         Returns:
             A list of the file paths to each scraped email.
 
@@ -140,7 +142,9 @@ class EmailListener:
         msg_dict = {}
 
         # Search for unseen messages
-        messages = self.server.search("UNSEEN")
+        messages = self.server.search(search_filter)
+        if (latest_only):
+            messages = messages[-1]
         # For each unseen message
         for uid, message_data in self.server.fetch(messages, 'RFC822').items():
             # Get the message
@@ -154,17 +158,18 @@ class EmailListener:
             val_dict = {}
 
             # Display notice
-            self.logger(f"PROCESSING: Email UID = {uid} from {from_email}")
+            if (not no_log):
+                self.logger(f"PROCESSING: Email UID<{uid}> from {from_email}")
 
             # Add the email address
-            val_dict["email_address"] = from_email
+            val_dict["From_Address"] = from_email
 
             # Add the email uid
-            val_dict["email_uid"] = uid
+            val_dict["Email_UID"] = uid
 
             # Add the date, ref: https://docs.python.org/2/library/datetime.html#strftime-and-strptime-behavior
             # eg. Wed, 2 Feb 2022 04:16:44 +0000
-            val_dict["date"] = datetime.strptime(self.__get_date(email_message), "%a, %d %b %Y %H:%M:%S %z")
+            val_dict["Date"] = datetime.strptime(self.__get_date(email_message), "%a, %d %b %Y %H:%M:%S %z")
 
             # Add the subject
             val_dict["Subject"] = self.__get_subject(email_message).strip()
@@ -369,8 +374,13 @@ class EmailListener:
         outer_timeout = calc_timeout(timeout)
 
         # Run until the timeout is reached
-        while (get_time() < outer_timeout):
-            self.__idle(timeout=update_frequency, process_func=process_func, **kwargs)
+        if timeout == -1:
+            while True:
+                self.__idle(timeout=update_frequency, process_func=process_func, **kwargs)
+        else:
+            while (get_time() < outer_timeout):
+                self.__idle(timeout=update_frequency, process_func=process_func, **kwargs)
+        self.logger("Email listener has stopped, reson: timeout")
         return
 
 
@@ -391,7 +401,7 @@ class EmailListener:
                         If not set, emails are kept as read.
                     delete (bool): Whether the emails should be deleted. If not
                         set, emails are not deleted.
-                    latest_only {on development} (bool): Get the latest email only(the last email that the user received).
+                    latest_only (bool): Get the latest email only(the last email that the user received).
 
         Returns:
             None
@@ -425,4 +435,3 @@ class EmailListener:
         # Stop idling
         self.server.idle_done()
         return
-

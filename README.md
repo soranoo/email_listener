@@ -31,7 +31,9 @@ email = "example@gmail.com"
 app_password = "password"
 folder = "Inbox"
 attachment_dir = "/path/to/attachments"
-el = email_listener.EmailListener(email, app_password, folder, attachment_dir)
+imap_address = "outlook.office365.com"
+imap_port = 993
+el = email_listener.EmailListener(email, app_password, folder, attachment_dir, imap_address=imap_address, imap_port=imap_port)
 
 # Log into the IMAP server
 el.login()
@@ -42,20 +44,21 @@ print(messages)
 
 # Start listening to the inbox and timeout after an hour
 timeout = 60
+#timeout = -1 # Listen forever
 el.listen(timeout)
 ```
 
 email_listener currently set Gmail(imap.gmail.com) as the default IMAP server, you can switch to another email server with the following tweaks.
 ```
-email_listener.EmailListener(email, app_password, folder, attachment_dir, imap_address=<IMAP Server Address>)
+email_listener.EmailListener(email, app_password, folder, attachment_dir, logger, imap_address=<IMAP Server Address>, imap_port=<IMAP Server Port>)
 ```
 
 The output:
 ```
 {'227_somebody@gmail.com':
-    {'email_address': 'somebody@gmail.com',
-     'email_uid': 227,
-     'date': 'Wed, 2 Feb 2022 04:16:44 +0000 <class 'datetime.datetime'>',
+    {'Email_Address': 'somebody@gmail.com',
+     'Email_UID': 227,
+     'Date': 'Wed, 2 Feb 2022 04:16:44 +0000 <class 'datetime.datetime'>',
      'Subject': 'EmailListener Test',
      'Plain_Text': 'This is the plain text message.\r\nThis is another line.\r\n',
      'Plain_HTML': 'This is the HTML message.  \nThis is another line.  \n\n',
